@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ruleta de Nombres con Vidas (Sync)</title>
+  <style>
+    :root{
+      --bg:#0b1020;--panel:#111833;--muted:#7c86a2;--primary:#6be3ff;--accent:#a78bfa;--ok:#34d399;--danger:#f87171;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;min-height:100svh;display:grid;grid-template-columns:minmax(300px,460px) 1fr;gap:20px;padding:20px;
+      background:radial-gradient(1200px 1200px at 20% 10%,#141b3a 0%,#0b1020 60%);
+      color:#e7ecff;font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;
+    }
+    @media (max-width:980px){body{grid-template-columns:1fr;grid-template-rows:auto auto}}
+    h1{font-size:20px;font-weight:700;margin:0 0 8px;letter-spacing:.3px}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.08);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    .side{padding:16px;display:grid;gap:14px;align-content:start}
+    .group{display:grid;gap:8px}
+    .grid2{display:grid;grid-template-columns:1fr 140px;gap:10px}
+    label{font-size:12px;color:#cdd8ff;opacity:.9}
+    input[type="text"],input[type="number"]{width:100%;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:#0e1430;color:#e8eeff;padding:10px 12px}
+    .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .status{margin-left:auto;font-size:12px;color:var(--muted)}
+    button{appearance:none;border:0;border-radius:12px;padding:10px 14px;font-weight:700;letter-spacing:.3px;color:#0a0f1f;background:var(--primary);cursor:pointer;transition:transform .05s ease}
+    button.secondary{background:#232a4f;color:#cfe3ff;border:1px solid rgba(255,255,255,.12)}
+    button.ghost{background:transparent;color:#cfe3ff;border:1px dashed rgba(255,255,255,.25)}
+    button.danger{background:var(--danger);color:#180a0a}
+    button:disabled{opacity:.55;cursor:not-allowed}
+    button:active{transform:translateY(1px)}
+
+    /* Duración */
+    .seg{display:flex;gap:8px;align-items:center;margin-left:auto}
+    .seg label{font-size:12px;color:var(--muted);margin-right:2px}
+    .seg button{background:#1a2147;color:#dbe8ff;border:1px solid rgba(255,255,255,.18)}
+    .seg button.active{background:var(--primary);color:#081020;border-color:transparent;box-shadow:0 0 0 3px rgba(107,227,255,.25)}
+
+    .list{max-height:360px;overflow:auto;border-radius:12px;border:1px solid rgba(255,255,255,.08)}
+    .row{display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.06);background:rgba(255,255,255,.02)}
+    .row:last-child{border-bottom:0}
+    .swatch{width:14px;height:14px;border-radius:4px;border:1px solid rgba(255,255,255,.5)}
+    .row .name{flex:1;font-weight:700}
+    .row .lives{opacity:.85}
+    .pill{font-size:12px;color:#081020;background:var(--ok);padding:2px 8px;border-radius:999px;border:1px solid rgba(0,0,0,.15)}
+
+    .left{display:grid;grid-template-rows:auto 1fr;gap:10px}
+    .roomline{display:flex;align-items:center;gap:8px;font-size:12px;color:#bcd2ff;padding:8px 12px}
+    .roomline code{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.12);padding:2px 6px;border-radius:6px;color:#e8f1ff}
+
+    .stage{position:relative;display:grid;place-items:center;aspect-ratio:1/1;padding:8px;overflow:visible}
+    canvas{width:100%;height:100%;max-width:min(68vh,640px);max-height:min(68vh,640px)}
+
+    .footer{color:var(--muted);font-size:12px;text-align:center;padding:6px 0}
+    .center-toast{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+    .center-toast>div{
+      background:rgba(10,15,31,.78);border:1px solid rgba(255,255,255,.28);backdrop-filter:blur(6px);
+      padding:10px 16px;border-radius:12px;font-weight:800;letter-spacing:.3px;
+      opacity:0;transform:scale(.95);transition:opacity .18s ease,transform .18s ease;color:#eaf2ff
+    }
+    .center-toast>div.show{opacity:1;transform:scale(1)}
+  </style>
+</head>
+<body>
+  <aside class="card side">
+    <h1>Entradas</h1>
+    <div class="roomline">
+      Sala: <code id="roomIdShow"></code>
+      <button id="copyLink" class="ghost">Copiar link</button>
+      <span id="syncStat" style="margin-left:auto;opacity:.8">🔄 Conectando…</span>
+    </div>
+    <div class="group grid2">
+      <div><label for="name">Nombre</label><input id="name" type="text" placeholder="Ej: Kevin" /></div>
+      <div><label for="lives">Vidas</label><input id="lives" type="number" min="1" max="1000" step="1" value="1" /></div>
+    </div>
+    <div class="controls">
+      <button id="addBtn">➕ Agregar</button>
+      <button id="replaceBtn" class="ghost">♻️ Reemplazar</button>
+      <button id="saveBtn" class="secondary">💾 Guardar local</button>
+      <button id="loadBtn" class="secondary">📂 Cargar local</button>
+      <button id="pushCloud" class="secondary">☁️ Subir a sala</button>
+      <button id="pullCloud" class="secondary">☁️ Traer de sala</button>
+    </div>
+    <div class="hint" style="color:var(--muted);font-size:12px">
+      Esta sala se sincroniza en vivo. Quien pulse <b>Girar</b> dispara el giro para todos.
+    </div>
+    <div class="list" id="summary"></div>
+  </aside>
+
+  <main class="left">
+    <section class="card" style="padding:12px">
+      <div class="controls">
+        <button id="spinBtn">🎯 Girar</button>
+        <button id="undoBtn" class="secondary">↩️ Deshacer local</button>
+        <button id="shuffleBtn" class="secondary">🔀 Mezclar local</button>
+        <button id="clearBtn" class="danger">🗑️ Limpiar sala</button>
+        <div class="seg" id="durSeg">
+          <label>Duración:</label>
+          <button type="button" data-dur="10000" class="active">10s</button>
+          <button type="button" data-dur="30000">30s</button>
+          <button type="button" data-dur="60000">1m</button>
+        </div>
+        <span id="status" class="status"></span>
+      </div>
+    </section>
+
+    <section class="card stage">
+      <canvas id="wheel" width="1000" height="1000"></canvas>
+      <div class="center-toast"><div id="centerToast"></div></div>
+    </section>
+    <div class="footer">💡 Tip: comparte el link de la sala para sincronizar. Añade nombres con X vidas (fichas). Al girar, se elimina 1 ficha del ganador tras 2 s.</div>
+  </main>
+
+  <!-- Firebase CDN -->
+  <script defer src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script defer src="https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore-compat.js"></script>
+
+  <script>
+  // ========= Helpers =========
+  const rand=(a,b)=>Math.random()*(b-a)+a;
+  const clamp=(x,a,b)=>Math.min(Math.max(x,a),b);
+  const lerp=(a,b,t)=>a+(b-a)*t;
+  const TAU=Math.PI*2;
+  const nowMs=()=>Date.now();
+
+  // ========= Sala (Room) =========
+  const params=new URLSearchParams(location.search);
+  let ROOM_ID = (params.get('room')||'').trim();
+  if(!ROOM_ID){
+    ROOM_ID = Math.random().toString(36).slice(2,8);
+    const url=new URL(location.href); url.searchParams.set('room', ROOM_ID);
+    history.replaceState({},'',url.toString());
+  }
+  document.getElementById('roomIdShow').textContent=ROOM_ID;
+  document.getElementById('copyLink').onclick=()=>{
+    navigator.clipboard.writeText(location.href); 
+    toastCenter('🔗 Link copiado');
+  };
+
+  // ========= Firebase =========
+  // 🔧 Pega tu configuración de Firebase aquí:
+  const firebaseConfig = {
+    apiKey: "AIzaSyB99xSZB2Q_Pn8gw12DKH6RAas-KcVgnMw",
+    authDomain: "ruleta-9dda1.firebaseapp.com",
+    projectId: "ruleta-9dda1",
+    // Firestore no necesita storageBucket para este ejemplo
+  };
+  let app, db, roomRef;
+  let syncReady=false;
+
+  // ========= Colores persistentes por participante (sincronizados) =========
+  // Evitamos que cambien una vez asignados. Se guardan en el doc de sala.
+  let colorRegistry = {}; // { nombre: 'hsl(...)' }
+  function hueDistance(a,b){ const d=Math.abs(a-b)%360; return d>180?360-d:d; }
+  function assignNewColorAvoiding(registry){
+    // genera un nuevo HSL evitando cercanía (<20°) a existentes
+    const usedHues = Object.values(registry)
+      .map(c=>{ const m=/hsl\(([\d.]+)/.exec(c); return m?parseFloat(m[1]):null; })
+      .filter(x=>x!==null);
+
+    let hue = (usedHues.length*137.508)%360;
+    for(let tries=0; tries<36; tries++){
+      const clash = usedHues.some(h=>hueDistance(h, hue) < 20);
+      if(!clash) break;
+      hue = (hue+20)%360;
+    }
+    return `hsl(${hue} 80% 52%)`;
+  }
+  function getOrAssignColor(base){
+    if(colorRegistry[base]) return colorRegistry[base];
+    const col=assignNewColorAvoiding(colorRegistry);
+    colorRegistry[base]=col;
+    queueRoomUpdate({ colorRegistry });
+    return col;
+  }
+
+  // ========= Modelo local (derivado de counts) =========
+  let entries=[]; const history=[];
+  function countsByBase(){ const m=new Map(); for(const e of entries)m.set(e.base,(m.get(e.base)||0)+1); return m; }
+  function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a; }
+
+  // ========= Canvas & Draw =========
+  const canvas=document.getElementById('wheel');
+  const ctx=canvas.getContext('2d');
+  const R=canvas.width/2;
+  let angle=0, highlightIdx=null;
+
+  // Estrella (boxicons path)
+  const STAR_PATH=new Path2D("M11.99 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.62L11.99 2 9.19 8.62 2 9.24l5.46 4.73L5.82 21z");
+
+  function draw(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    const n=entries.length;
+    // base oscura
+    ctx.save(); ctx.translate(R,R);
+    ctx.beginPath(); ctx.arc(0,0,R,0,TAU); ctx.fillStyle='#0f1430'; ctx.fill();
+    ctx.restore();
+
+    if(n===0){
+      ctx.save(); ctx.translate(R,R);
+      ctx.fillStyle='#9fb4ff'; ctx.font='bold 42px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('Añade nombres y vidas',0,0); ctx.restore();
+      return;
+    }
+
+    const arc=TAU/n;
+    const margin=28, ringW=22;
+
+    // Todo el grupo GIRA con angle
+    ctx.save();
+    ctx.translate(R,R);
+    ctx.rotate(angle);
+
+    // sectores + textos
+    for(let i=0;i<n;i++){
+      const start=i*arc;
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.arc(0,0,R-margin,start,start+arc,false); ctx.closePath();
+      ctx.fillStyle=entries[i].color; ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,.18)'; ctx.lineWidth=2; ctx.stroke();
+
+      ctx.save();
+      ctx.rotate(start+arc/2);
+      ctx.textAlign='right'; ctx.textBaseline='middle';
+      ctx.fillStyle='rgba(0,0,0,.82)';
+      ctx.font=`900 ${Math.max(16, Math.min(42, 24 + Math.floor(280/n)))}px system-ui`;
+      ctx.fillText(entries[i].label, R-margin-40, 0);
+      ctx.restore();
+
+      if(i===highlightIdx){
+        ctx.save();
+        ctx.beginPath(); ctx.moveTo(0,0); ctx.arc(0,0,R-margin+4,start,start+arc,false); ctx.closePath();
+        ctx.strokeStyle='rgba(255,255,255,.95)'; ctx.lineWidth=5; ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // aro exterior sombreado
+    ctx.save();
+    ctx.shadowColor='rgba(0,0,0,.6)'; ctx.shadowBlur=24;
+    ctx.lineWidth=ringW+4; ctx.strokeStyle='#1a1038';
+    ctx.beginPath(); ctx.arc(0,0,R-margin/2+2,0,TAU); ctx.stroke();
+    ctx.restore();
+
+    // aro dorado
+    const gold=ctx.createLinearGradient(-R,0,R,0);
+    gold.addColorStop(0,'#d9a441'); gold.addColorStop(.5,'#ffd46b'); gold.addColorStop(1,'#d9a441');
+    ctx.lineWidth=ringW; ctx.strokeStyle=gold;
+    ctx.beginPath(); ctx.arc(0,0,R-margin/2,0,TAU); ctx.stroke();
+
+    // bombitas visuales
+    const bulbs=24, bulbR=6, rBulb=R - margin/2 - ringW/2;
+    for(let i=0;i<bulbs;i++){
+      const a=(i/bulbs)*TAU, x=Math.cos(a)*rBulb, y=Math.sin(a)*rBulb;
+      ctx.save(); ctx.translate(x,y);
+      ctx.fillStyle='#ffe27a'; ctx.shadowColor='#ffe27a'; ctx.shadowBlur=16;
+      ctx.beginPath(); ctx.arc(0,0,bulbR,0,TAU); ctx.fill(); ctx.restore();
+    }
+
+    // aro fino interno
+    ctx.lineWidth=4; ctx.strokeStyle='rgba(255,255,255,.25)';
+    ctx.beginPath(); ctx.arc(0,0,R-margin-6,0,TAU); ctx.stroke();
+
+    // centro
+    const g1=ctx.createRadialGradient(0,0,0,0,0,110);
+    g1.addColorStop(0,'#ff9be6'); g1.addColorStop(1,'#8fc7ff');
+    ctx.beginPath(); ctx.arc(0,0,110,0,TAU); ctx.fillStyle=g1; ctx.fill();
+
+    ctx.beginPath(); ctx.arc(0,0,86,0,TAU); ctx.fillStyle='#fff3d3'; ctx.fill();
+    ctx.beginPath(); ctx.arc(0,0,86,0,TAU); ctx.strokeStyle='rgba(0,0,0,.12)'; ctx.lineWidth=3; ctx.stroke();
+
+    // estrella (boxicons)
+    ctx.save();
+    ctx.fillStyle='#ffd46b'; ctx.strokeStyle='#d9a441'; ctx.lineWidth=3;
+    ctx.translate(-12*3.6, -12*3.6); ctx.scale(3.6,3.6);
+    ctx.fill(STAR_PATH); ctx.stroke(STAR_PATH);
+    ctx.restore();
+
+    ctx.restore(); // fin giro
+
+    // Flecha vectorial fija (apunta hacia "<")
+    const x = canvas.width/2 + (R - (margin/2) + 1);
+    const y = canvas.height/2;
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.beginPath();
+    ctx.moveTo(-24,0);
+    ctx.lineTo(+2,-14);
+    ctx.lineTo(+2, 14);
+    ctx.closePath();
+    ctx.fillStyle='#47c7ff';
+    ctx.strokeStyle='#178db8';
+    ctx.lineWidth=3;
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
+  // ========= Audio (menos ticks: 12 posiciones) =========
+  let audioCtx;
+  function ensureAudio(){ if(!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)(); }
+  function beep(freq=1300,dur=0.03,vol=0.04){
+    ensureAudio(); const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type='square'; o.frequency.value=freq; g.gain.value=vol; o.connect(g).connect(audioCtx.destination); o.start();
+    setTimeout(()=>o.stop(), dur*1000);
+  }
+  function dong(){
+    ensureAudio(); const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(520,audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(220,audioCtx.currentTime+0.6);
+    g.gain.setValueAtTime(0.001,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.08,audioCtx.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,audioCtx.currentTime+0.8);
+    o.connect(g).connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.82);
+  }
+  const SOUND_TICKS=12;
+  const TICK_ARC=TAU/SOUND_TICKS;
+  let lastTickIndex=0;
+
+  // ========= Ruleta: animación compartida =========
+  const easeOutQuint=t=>1-Math.pow(1-t,5);
+  let spinning=false, spinDurationMs=10000;
+  const statusEl=document.getElementById('status');
+  const centerToast=document.getElementById('centerToast');
+
+  function toastCenter(msg){
+    centerToast.textContent=msg;
+    centerToast.classList.add('show');
+    clearTimeout(toastCenter._t);
+    toastCenter._t=setTimeout(()=> centerToast.classList.remove('show'), 2000);
+  }
+
+  // ========= UI lista =========
+  function renderSummary(){
+    const box=document.getElementById('summary'); box.innerHTML='';
+    const map=countsByBase(); const rows=[...map.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+    if(rows.length===0){ box.innerHTML='<div class="row" style="justify-content:center;opacity:.8">Sin entradas</div>'; return; }
+    for(const [base,count] of rows){
+      const color=colorRegistry[base]||'hsl(0 0% 60%)';
+      const row=document.createElement('div'); row.className='row';
+      row.innerHTML=`
+        <div class="swatch" style="background:${color}"></div>
+        <div class="name">${base}</div>
+        <div class="lives pill" title="Fichas restantes">${count} vida${count!==1?'s':''}</div>
+        <button class="ghost" data-spin="${base}" title="Forzar que salga (sync)">🎯</button>
+        <button class="ghost" data-remove="${base}" title="Quitar 1 (local)">-1</button>
+        <button class="ghost" data-removeall="${base}" title="Eliminar todas (local)">Eliminar</button>`;
+      box.appendChild(row);
+    }
+    box.querySelectorAll('[data-spin]').forEach(b=>b.addEventListener('click',()=>spinSync({forceBase:b.getAttribute('data-spin')})));
+    // las acciones -1 / eliminar son sólo locales (debug) — el estado verdadero viene de Firestore
+    box.querySelectorAll('[data-remove]').forEach(b=>b.addEventListener('click',()=>{
+      if(spinning) return; const base=b.getAttribute('data-remove');
+      const idx=entries.findIndex(e=>e.base===base); if(idx>=0){ history.push(entries[idx]); entries.splice(idx,1); draw(); renderSummary(); }
+    }));
+    box.querySelectorAll('[data-removeall]').forEach(b=>b.addEventListener('click',()=>{
+      if(spinning) return; const base=b.getAttribute('data-removeall');
+      for(let i=entries.length-1;i>=0;i--) if(entries[i].base===base){ history.push(entries[i]); entries.splice(i,1); }
+      draw(); renderSummary();
+    }));
+  }
+
+  // ========= Reconstruir entradas desde counts (estado de sala) =========
+  function rebuildFromCounts(counts){
+    entries=[];
+    const bases=Object.keys(counts||{}).filter(k=>counts[k]>0).sort((a,b)=>a.localeCompare(b));
+    for(const base of bases){
+      const col=getOrAssignColor(base); // asegura color estable
+      for(let i=0;i<(counts[base]|0);i++) entries.push({label:base, base, color:col});
+    }
+    shuffle(entries); draw(); renderSummary();
+  }
+
+  // ========= Duración selector =========
+  function initDurationSelector(){
+    const seg=document.getElementById('durSeg');
+    seg.querySelectorAll('button[data-dur]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        seg.querySelectorAll('button[data-dur]').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        spinDurationMs=parseInt(btn.getAttribute('data-dur'),10)||10000;
+      });
+    });
+  }
+
+  // ========= Firestore Sync Layer =========
+  // Document schema (rooms/{ROOM_ID}):
+  // {
+  //   counts: { [name]: number },
+  //   colorRegistry: { [name]: 'hsl(...)' },
+  //   spinState: {
+  //     spinning: bool,
+  //     startTime: <serverTimestamp>,
+  //     startAngle: number,
+  //     targetAngle: number,
+  //     durationMs: number,
+  //     by: string,             // clientId que controla este giro
+  //     forceBase: string|null, // opcional
+  //     lastSpinId: string      // uid para de-dupe
+  //   },
+  //   lastWinner: { name: string, remaining: number } // informativo
+  // }
+  const CLIENT_ID = (localStorage.getItem('roulette_client_id') || (()=>{
+    const id = 'c_' + Math.random().toString(36).slice(2,10);
+    localStorage.setItem('roulette_client_id', id);
+    return id;
+  })());
+
+  let remote = { counts:{}, colorRegistry:{}, spinState:null, lastWinner:null };
+
+  // buffer de updates (para no spamear set() cada tecla)
+  let updateBuffer = {};
+  let updateTimer = null;
+  function queueRoomUpdate(patch){
+    Object.assign(updateBuffer, patch);
+    if(updateTimer) return;
+    updateTimer = setTimeout(async ()=>{
+      const data = updateBuffer; updateBuffer={}; updateTimer=null;
+      if(!db) return;
+      try{ await roomRef.set(data, {merge:true}); }catch(e){ console.error(e); }
+    }, 120);
+  }
+
+  async function initFirebase(){
+    try{
+      app = firebase.initializeApp(firebaseConfig);
+      db  = firebase.firestore();
+      roomRef = db.collection('rooms').doc(ROOM_ID);
+
+      // Crear doc si no existe
+      const snap = await roomRef.get();
+      if(!snap.exists){
+        await roomRef.set({
+          counts:{},
+          colorRegistry:{},
+          spinState:{spinning:false},
+          lastWinner:null,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, {merge:true});
+      }
+
+      // Escucha en tiempo real
+      roomRef.onSnapshot(doc=>{
+        const d = doc.data()||{};
+        remote.counts = d.counts || {};
+        remote.colorRegistry = d.colorRegistry || {};
+        remote.spinState = d.spinState || {spinning:false};
+        remote.lastWinner = d.lastWinner || null;
+
+        // sincronizar registro de colores (no pisamos local si tenemos más, pero damos prioridad a remoto)
+        colorRegistry = {...colorRegistry, ...remote.colorRegistry};
+
+        // reconstruir entradas desde counts remoto
+        rebuildFromCounts(remote.counts);
+
+        // si hay giro remoto, animar igual
+        if(remote.spinState && remote.spinState.spinning){
+          playRemoteSpin(remote.spinState);
+        }else{
+          spinning=false;
+        }
+
+        document.getElementById('syncStat').textContent = '✅ Sincronizado';
+        syncReady = true;
+      });
+
+    }catch(e){
+      console.error('Firebase init error:', e);
+      document.getElementById('syncStat').textContent = '⚠️ Error de sync';
+    }
+  }
+
+  // ========= Acciones de sala =========
+
+  // Guardado/lectura local (opcional para backup rápido, no afecta a la sala)
+  function saveLocal(){ localStorage.setItem('roulette_counts', JSON.stringify(Object.fromEntries(countsByBase()))); statusEl.textContent='Guardado local ✔️'; }
+  function loadLocal(){
+    const raw=localStorage.getItem('roulette_counts'); if(!raw){statusEl.textContent='No hay guardado local'; return;}
+    try{ const m=JSON.parse(raw)||{}; queueRoomUpdate({ counts:m }); statusEl.textContent='Subido desde local ✔️ (a la sala)'; }
+    catch{ statusEl.textContent='Guardado local corrupto'; }
+  }
+  document.getElementById('saveBtn').onclick=saveLocal;
+  document.getElementById('loadBtn').onclick=loadLocal;
+  document.getElementById('pushCloud').onclick=()=> queueRoomUpdate({ counts: Object.fromEntries(countsByBase()), colorRegistry });
+  document.getElementById('pullCloud').onclick=()=> rebuildFromCounts(remote.counts);
+
+  // Añadir / Reemplazar / Limpiar —> siempre escribimos en la SALA
+  document.getElementById('addBtn').addEventListener('click',()=>{
+    if(!syncReady) return;
+    const name=(document.getElementById('name').value||'').trim();
+    const lives=clamp(parseInt(document.getElementById('lives').value||'1',10)||1,1,1000);
+    if(!name) return;
+    const counts = {...remote.counts};
+    counts[name] = (counts[name]||0) + lives;
+    // asegura color para el nuevo
+    if(!colorRegistry[name]) { colorRegistry[name]=getOrAssignColor(name); }
+    queueRoomUpdate({ counts, colorRegistry });
+    document.getElementById('name').value=''; document.getElementById('lives').value='1';
+  });
+
+  document.getElementById('replaceBtn').addEventListener('click',()=>{
+    if(!syncReady) return;
+    const name=(document.getElementById('name').value||'').trim();
+    const lives=clamp(parseInt(document.getElementById('lives').value||'1',10)||1,1,1000);
+    const counts = {};
+    if(name){ counts[name]=lives; if(!colorRegistry[name]) colorRegistry[name]=getOrAssignColor(name); }
+    queueRoomUpdate({ counts, colorRegistry });
+    statusEl.textContent='';
+  });
+
+  document.getElementById('clearBtn').addEventListener('click',()=>{
+    if(!syncReady) return;
+    queueRoomUpdate({ counts:{}, lastWinner:null });
+  });
+
+  document.getElementById('shuffleBtn').addEventListener('click',()=>{
+    if(spinning) return; shuffle(entries); draw();
+  });
+
+  document.getElementById('undoBtn').addEventListener('click',()=>{
+    if(spinning||history.length===0) return;
+    const last=history.pop(); const pos=Math.floor(Math.random()*(entries.length+1));
+    entries.splice(pos,0,last); statusEl.textContent=`↩️ Revertido (local): ${last.label}`; draw(); renderSummary();
+  });
+
+  // Selector duración
+  initDurationSelector();
+
+  // ========= Lógica de giro sincronizado =========
+
+  // Calcular targetAngle en base a la lista actual (offset aleatorio dentro del sector)
+  function computeTargetAngle(currentAngle, durationMs, forceBase=null){
+    const n=entries.length; if(n<1) return {to: currentAngle};
+    const arc=TAU/n;
+    let idx;
+    if(forceBase){
+      const idxs=[]; for(let i=0;i<entries.length;i++) if(entries[i].base===forceBase) idxs.push(i);
+      if(!idxs.length) idx = Math.floor(Math.random()*n);
+      else idx = idxs[Math.floor(Math.random()*idxs.length)];
+    }else{
+      idx = Math.floor(Math.random()*n);
+    }
+    const offset = rand(0.05, 0.95);
+    const a_final=(TAU-((idx+offset)*arc))%TAU;
+    const toAngle=currentAngle+((a_final-(currentAngle%TAU))+TAU)%TAU;
+    return {to: toAngle};
+  }
+
+  // Inicia un giro y lo escribe en la sala (si no hay otro en curso)
+  async function spinSync({forceBase=null}={}){
+    if(!syncReady) return;
+    const st = remote.spinState || {};
+    if(st.spinning) return; // ya hay un giro en curso
+
+    const v0 = spinDurationMs<=10000 ? 3.8 : spinDurationMs<=30000 ? 3.4 : 3.4;
+    const omega0=v0*TAU;
+
+    // apunta a un destino que garantice "arranque rápido" con easeOutQuint
+    let baseDiff = computeTargetAngle(angle, spinDurationMs, forceBase).to - angle;
+    baseDiff = ((baseDiff%TAU)+TAU)%TAU;
+    const minDiffForV0 = (omega0*spinDurationMs)/5;
+    let extraTurns=Math.max(0, Math.ceil((minDiffForV0 - baseDiff)/TAU));
+    extraTurns=Math.min(extraTurns, 16);
+
+    const {to} = computeTargetAngle(angle + extraTurns*TAU, spinDurationMs, forceBase);
+    const target = to;
+
+    const spinId = 's_'+Math.random().toString(36).slice(2,10);
+
+    try{
+      await roomRef.set({
+        spinState:{
+          spinning:true,
+          startTime: firebase.firestore.FieldValue.serverTimestamp(),
+          startAngle: angle,
+          targetAngle: target,
+          durationMs: spinDurationMs,
+          by: CLIENT_ID,
+          forceBase: forceBase||null,
+          lastSpinId: spinId
+        }
+      }, {merge:true});
+    }catch(e){ console.error(e); }
+  }
+
+  // Reproduce un giro remoto (todos los clientes lo animan con el mismo easing)
+  let animatingSpinId = null;
+  function playRemoteSpin(spin){
+    if(!spin || !spin.spinning) return;
+    // evita reiniciar si es el mismo spinId
+    if(animatingSpinId === spin.lastSpinId) return;
+    animatingSpinId = spin.lastSpinId;
+
+    const startA = spin.startAngle||0;
+    const targetA = spin.targetAngle||startA;
+    const dur = spin.durationMs||10000;
+
+    // calcular delta de tiempo usando server time ~ client time
+    const startLocal = nowMs(); // referencia local
+    let lastTickIndexLocal = Math.floor( ((angle%TAU)+TAU)%TAU / TICK_ARC );
+
+    spinning = true;
+    function frame(t0){
+      const elapsed = nowMs() - startLocal;
+      const t = clamp(elapsed / dur, 0, 1);
+      const eased = easeOutQuint(t);
+      angle = lerp(startA, targetA, eased);
+
+      // ticks
+      const aNorm=((angle%TAU)+TAU)%TAU;
+      const tickIndex=Math.floor(aNorm/TICK_ARC);
+      if(tickIndex!==lastTickIndexLocal){ beep(); lastTickIndexLocal=tickIndex; }
+
+      draw();
+      if(t<1){
+        requestAnimationFrame(frame);
+      }else{
+        finishSpinSync(spin);
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  // Al terminar el giro remoto: todos ven el ganador; SOLO el iniciador actualiza la sala (cuenta -1)
+  async function finishSpinSync(spin){
+    dong();
+    const n=entries.length; if(n<1){ spinning=false; return; }
+    const arc=TAU/n;
+    const a=((angle%TAU)+TAU)%TAU, s=(TAU-a)%TAU;
+    const idx=Math.floor(s/arc), winner=entries[idx];
+
+    highlightIdx=idx; draw();
+    const remainingAfter=(countsByBase().get(winner.base)||1)-1;
+    const msg=`💀 ${winner.label} eliminado. Restan ${Math.max(remainingAfter,0)}`;
+    statusEl.textContent=msg; toastCenter(msg);
+
+    // Tras 2s, si soy quien inició el giro, actualizo counts en la sala.
+    setTimeout(async ()=>{
+      highlightIdx=null; spinning=false; draw();
+
+      if(spin.by === CLIENT_ID){
+        const counts = {...remote.counts};
+        counts[winner.base] = Math.max(0, (counts[winner.base]||1) - 1);
+        try{
+          await roomRef.set({
+            counts,
+            lastWinner:{ name:winner.base, remaining:counts[winner.base] },
+            spinState:{ spinning:false }
+          }, {merge:true});
+        }catch(e){ console.error(e); }
+      }
+    }, 2000);
+  }
+
+  // ========= Botón girar =========
+  document.getElementById('spinBtn').addEventListener('click',()=>spinSync());
+
+  // ========= Guardado local antiguo (compat) =========
+  function saveLocalLegacy(){ localStorage.setItem('roulette_counts', JSON.stringify(Object.fromEntries(countsByBase()))); }
+  function loadLocalLegacy(){
+    const raw=localStorage.getItem('roulette_counts'); if(!raw) return {};
+    try{ return JSON.parse(raw)||{}; }catch{ return {}; }
+  }
+  document.getElementById('saveBtn').addEventListener('click', saveLocalLegacy);
+
+  // ========= Inicialización =========
+  function drawAndRender(){ draw(); renderSummary(); }
+  drawAndRender();
+  window.addEventListener('resize', draw);
+
+  // Inicia Firebase y la escucha en la sala
+  document.getElementById('syncStat').textContent='🔄 Conectando…';
+  window.addEventListener('load', initFirebase);
+
+  </script>
+
+  <!--
+  🔐 Reglas Firestore para pruebas (ajústalas en Producción):
+  service cloud.firestore {
+    match /databases/{database}/documents {
+      match /rooms/{roomId} {
+        allow read, write: if true; // SOLO PARA PRUEBAS
+      }
+    }
+  }
+  En producción, restringe por Auth/roomId.
+  -->
+</body>
+</html>
